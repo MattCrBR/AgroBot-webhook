@@ -1,5 +1,5 @@
 import os
-import json
+import time
 import requests
 from fastapi import FastAPI, Request
 from dotenv import load_dotenv
@@ -9,7 +9,14 @@ load_dotenv()
 EVOLUTION_API_URL = os.getenv("EVOLUTION_API_URL")
 EVOLUTION_API_KEY = os.getenv("EVOLUTION_API_KEY")
 EVOLUTION_INSTANCE = os.getenv("EVOLUTION_INSTANCE")
-print(f"URL: {EVOLUTION_API_URL}, KEY: {EVOLUTION_API_KEY}, INSTANCE: {EVOLUTION_INSTANCE}")
+
+# Modo desenvolvimento: só processa mensagens dessas conversas
+ALLOWED_NUMBERS = {
+    n.strip() for n in os.getenv("ALLOWED_NUMBERS", "").split(",") if n.strip()
+}
+
+# Ignora eventos mais antigos que isso (evita responder backlog após ficar offline)
+MAX_AGE_SECONDS = 120
 
 app = FastAPI()
 
@@ -24,11 +31,34 @@ def get_image_base64(message_id: str) -> str | None:
 
     response = requests.post(url, headers=headers, json=body)
 
-    if response.ok:  # aceita qualquer status 200-299, não só 200 exato
+    if response.ok:
         return response.json().get("base64")
 
     print(f"Erro ao buscar mídia: {response.status_code}")
     return None
+
+
+def extract_number(jid: str) -> str:
+    return jid.split("@")[0]
+
+
+def should_process(key: dict) -> bool:
+    remote_jid = key.get("remoteJid", "")
+
+    # Nunca processa grupos
+    if remote_jid.endswith("@g.us"):
+        return False
+
+    # Só processa conversas com números da lista de permitidos
+    number = extract_number(key.get("remoteJidAlt") or remote_jid)
+    return number in ALLOWED_NUMBERS
+
+
+def event_age_seconds(data: dict) -> int:
+    ts = data.get("messageTimestamp")
+    if isinstance(ts, dict):
+        ts = ts.get("low")
+    return int(time.time()) - int(ts) if ts else 0
 
 
 @app.get("/")
@@ -44,6 +74,12 @@ async def receive_webhook(request: Request):
     key = data.get("key", {})
     message = data.get("message", {})
     message_type = data.get("messageType", "")
+
+    if event_age_seconds(data) > MAX_AGE_SECONDS:
+        return {"status": "stale"}
+
+    if not should_process(key):
+        return {"status": "ignored"}
 
     message_id = key.get("id", "")
     remote_jid = key.get("remoteJid", "")
