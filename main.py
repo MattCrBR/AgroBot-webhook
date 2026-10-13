@@ -1,22 +1,16 @@
+import time
+import json
+
 from config import (
-    EVOLUTION_API_URL,
-    EVOLUTION_API_KEY,
-    EVOLUTION_INSTANCE,
     ALLOWED_NUMBERS,
     MAX_AGE_SECONDS,
     FEEDBACK_FILE,
     TIPOS_SEM_SUPORTE
 )
-import time
-import json
-import requests
-import random
+
 from fastapi import FastAPI, Request, BackgroundTasks
 from pipeline import analisar_foto
-
-
-# IDs das mensagens enviadas pelo próprio bot (para não responder a si mesmo)
-sent_message_ids: set[str] = set()
+from evolution import get_image_base64, send_text, sent_message_ids
 
 # IDs de mensagens já aceitas (evita processar o mesmo evento duas vezes)
 processed_ids: set[str] = set()
@@ -25,43 +19,6 @@ processed_ids: set[str] = set()
 last_diagnosis: dict[str, dict] = {}
 
 app = FastAPI()
-
-def get_image_base64(message_id: str) -> str | None:
-    url = f"{EVOLUTION_API_URL}/chat/getBase64FromMediaMessage/{EVOLUTION_INSTANCE}"
-    headers = {
-        "Content-Type": "application/json",
-        "apikey": EVOLUTION_API_KEY,
-    }
-    body = {"message": {"key": {"id": message_id}}}
-
-    response = requests.post(url, headers=headers, json=body)
-
-    if response.ok:
-        return response.json().get("base64")
-
-    print(f"Erro ao buscar mídia: {response.status_code}")
-    return None
-
-def send_text(number: str, text: str) -> None:
-    url = f"{EVOLUTION_API_URL}/message/sendText/{EVOLUTION_INSTANCE}"
-    headers = {
-        "Content-Type": "application/json",
-        "apikey": EVOLUTION_API_KEY,
-    }
-    body = {
-        "number": number,
-        "text": text,
-        "delay": random.randint(2000, 4000),  # 2 a 4 segundos
-    }
-
-    response = requests.post(url, headers=headers, json=body)
-
-    if response.ok:
-        sent_id = response.json().get("key", {}).get("id")
-        if sent_id:
-            sent_message_ids.add(sent_id)
-    else:
-        print(f"Erro ao enviar mensagem: {response.status_code}")
 
 def extract_number(jid: str) -> str:
     return jid.split("@")[0]
