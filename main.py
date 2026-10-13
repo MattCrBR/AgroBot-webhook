@@ -1,29 +1,19 @@
-import os
+from config import (
+    EVOLUTION_API_URL,
+    EVOLUTION_API_KEY,
+    EVOLUTION_INSTANCE,
+    ALLOWED_NUMBERS,
+    MAX_AGE_SECONDS,
+    FEEDBACK_FILE,
+    TIPOS_SEM_SUPORTE
+)
 import time
 import json
 import requests
 import random
 from fastapi import FastAPI, Request, BackgroundTasks
-from dotenv import load_dotenv
 from pipeline import analisar_foto
 
-load_dotenv()
-
-EVOLUTION_API_URL = os.getenv("EVOLUTION_API_URL")
-EVOLUTION_API_KEY = os.getenv("EVOLUTION_API_KEY")
-EVOLUTION_INSTANCE = os.getenv("EVOLUTION_INSTANCE")
-
-TIPOS_SEM_SUPORTE = {
-    "audioMessage", "stickerMessage", "videoMessage", "documentMessage", "contactMessage", "locationMessage", 
-}
-
-# Modo desenvolvimento: só processa mensagens dessas conversas
-ALLOWED_NUMBERS = {
-    n.strip() for n in os.getenv("ALLOWED_NUMBERS", "").split(",") if n.strip()
-}
-
-# Ignora eventos mais antigos que isso (evita responder backlog após ficar offline)
-MAX_AGE_SECONDS = 120
 
 # IDs das mensagens enviadas pelo próprio bot (para não responder a si mesmo)
 sent_message_ids: set[str] = set()
@@ -31,13 +21,10 @@ sent_message_ids: set[str] = set()
 # IDs de mensagens já aceitas (evita processar o mesmo evento duas vezes)
 processed_ids: set[str] = set()
 
-FEEDBACK_FILE="feedback.jsonl"
-
 # Último diagnóstico enviado a cada número (liga o 👍/👎 à resposta certa)
 last_diagnosis: dict[str, dict] = {}
 
 app = FastAPI()
-
 
 def get_image_base64(message_id: str) -> str | None:
     url = f"{EVOLUTION_API_URL}/chat/getBase64FromMediaMessage/{EVOLUTION_INSTANCE}"
