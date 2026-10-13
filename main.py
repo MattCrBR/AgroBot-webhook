@@ -1,5 +1,6 @@
 import os
 import time
+import json
 import requests
 import random
 from fastapi import FastAPI, Request, BackgroundTasks
@@ -25,6 +26,11 @@ sent_message_ids: set[str] = set()
 
 # IDs de mensagens já aceitas (evita processar o mesmo evento duas vezes)
 processed_ids: set[str] = set()
+
+FEEDBACK_FILE="feedback.jsonl"
+
+# Último diagnóstico enviado a cada número (liga o 👍/👎 à resposta certa)
+last_diagnosis: dict[str, dict] = {}
 
 app = FastAPI()
 
@@ -81,6 +87,12 @@ def should_process(key: dict) -> bool:
     number = extract_number(key.get("remoteJidAlt") or remote_jid)
     return number in ALLOWED_NUMBERS
 
+def registrar_feedback(number: str, valor: str) -> None:
+    diagnostico = last_diagnosis.pop(number, {})
+    registro = {"ts": int(time.time()), "feedback": valor, **diagnostico}
+    with open(FEEDBACK_FILE, "a", encoding="utf-8") as f:
+        f.write(json.dumps(registro, ensure_ascii=False) + "\n")
+
 def process_message(key: dict, message: dict, message_type: str) -> None:
     message_id = key.get("id", "")
     remote_jid = key.get("remoteJid", "")
@@ -94,8 +106,15 @@ def process_message(key: dict, message: dict, message_type: str) -> None:
     print(f"Tipo: {message_type}")
 
     if message_type == "conversation":
-        print(f"Texto: {message.get('conversation')}")
-        send_text(number, "Oi! Me manda uma foto da praga na planta de milho que eu te ajudo. 🌽")
+        texto = (message.get("conversation") or "").strip()
+        print(f"Texto: {texto}")
+
+        # Feedback (👍/👎) sobre o último diagnóstico enviado a esse número
+        if number in last_diagnosis and texto.startswith(("👍", "👎")):
+            registrar_feedback(number, "positivo" if texto.startswith("👍") else "negativo")
+            send_text(number, "Obrigado pelo retorno! 🌽")
+        else:
+            send_text(number, "Oi! Me manda uma foto da praga na planta de milho que eu te ajudo. 🌽")
 
     elif message_type == "imageMessage":
         image_data = message.get("imageMessage", {})
@@ -106,7 +125,10 @@ def process_message(key: dict, message: dict, message_type: str) -> None:
         if base64_image:
             print(f"Imagem decodificada com sucesso ({len(base64_image)} caracteres em base64)")
             try:
-                resposta = analisar_foto(base64_image)
+                resultado = analisar_foto(base64_image)
+                resposta = resultado["texto"]
+                if resultado["diagnostico"]:
+                    last_diagnosis[number] = resultado["diagnostico"]
             except Exception as e:
                 print(f"Erro no pipeline: {type(e).__name__}")
                 resposta = "Tive um problema para analisar a foto. Pode tentar de novo daqui a pouco?"
