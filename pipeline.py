@@ -1,10 +1,13 @@
 import os
+import logging
 
 # Limiares do roteador de confiança
 LIMIAR_ALTO = 0.80
 LIMIAR_MEDIO = 0.50
 
 CLASSES = ["lagarta-do-cartucho", "lagarta-da-espiga", "vaquinha", "milho-saudavel"]
+
+logger = logging.getLogger(__name__)
 
 # Rodapé fixo: anexado pelo sistema, sem depender do LLM
 AVISO = "⚠️ Orientação geral, não substitui a receita de um engenheiro agrônomo."
@@ -64,7 +67,7 @@ def analisar_foto(imagem_base64: str) -> dict:
     resultado = classificar(imagem_base64)
     praga = resultado["praga"]
     confianca = resultado["confianca"]
-    print(f"Classificação: {praga} ({confianca:.0%})")
+    logger.info("Classificação: %s (%.0%%)", praga, confianca * 100)
 
     # Confiança baixa: não arrisca diagnóstico
     if confianca < LIMIAR_MEDIO:

@@ -1,7 +1,10 @@
 import random
 import requests
+import logging
 
 from config import EVOLUTION_API_URL, EVOLUTION_API_KEY, EVOLUTION_INSTANCE
+
+logger = logging.getLogger(__name__)
 
 TIMEOUT_SECONDS = 30
 
@@ -23,13 +26,13 @@ def get_image_base64(message_id: str) -> str | None:
     try:
         response = requests.post(url, headers=_headers(), json=body, timeout=TIMEOUT_SECONDS)
     except requests.RequestException as e:
-        print(f"Erro de rede ao buscar mídia: {type(e).__name__}")
+        logger.error("Erro de rede ao buscar mídia: %s", type(e).__name__)
         return None
 
     if response.ok:
         return response.json().get("base64")
 
-    print(f"Erro ao buscar mídia: {response.status_code}")
+    logger.error("Erro ao buscar mídia: %d", response.status_code)
     return None
 
 
@@ -44,7 +47,7 @@ def send_text(number: str, text: str) -> None:
     try:
         response = requests.post(url, headers=_headers(), json=body, timeout=TIMEOUT_SECONDS)
     except requests.RequestException as e:
-        print(f"Erro de rede ao enviar mensagem: {type(e).__name__}")
+        logger.error("Erro de rede ao enviar mensagem: %s", type(e).__name__)
         return
 
     if response.ok:
@@ -52,4 +55,4 @@ def send_text(number: str, text: str) -> None:
         if sent_id:
             sent_message_ids.add(sent_id)
     else:
-        print(f"Erro ao enviar mensagem: {response.status_code}")
+        logger.error("Erro ao enviar mensagem: %d", response.status_code)

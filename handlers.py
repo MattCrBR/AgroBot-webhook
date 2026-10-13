@@ -1,5 +1,6 @@
 import json
 import time
+import logging
 
 from config import (
     ALLOWED_NUMBERS,
@@ -9,6 +10,8 @@ from config import (
 )
 from evolution import get_image_base64, send_text, sent_message_ids
 from pipeline import analisar_foto
+
+logger = logging.getLogger(__name__)
 
 # IDs de mensagens já aceitas (evita processar o mesmo evento duas vezes)
 processed_ids: set[str] = set()
@@ -20,6 +23,8 @@ last_diagnosis: dict[str, dict] = {}
 def extract_number(jid: str) -> str:
     return jid.split("@")[0]
 
+def mask_number(number: str) -> str:
+    return f"***{number[-4:]}" if len(number) > 4 else "***"
 
 def event_age_seconds(data: dict) -> int:
     ts = data.get("messageTimestamp")
@@ -67,6 +72,7 @@ def registrar_feedback(number: str, valor: str) -> None:
     registro = {"ts": int(time.time()), "feedback": valor, **diagnostico}
     with open(FEEDBACK_FILE, "a", encoding="utf-8") as f:
         f.write(json.dumps(registro, ensure_ascii=False) + "\n")
+        logger.info("Feedback registrado: %s", valor)
 
 
 def process_message(key: dict, message: dict, message_type: str) -> None:
@@ -75,11 +81,10 @@ def process_message(key: dict, message: dict, message_type: str) -> None:
     from_me = key.get("fromMe", False)
     number = extract_number(key.get("remoteJidAlt") or remote_jid)
 
-    print("=== Mensagem recebida ===")
-    print(f"ID: {message_id}")
-    print(f"De: {remote_jid}")
-    print(f"fromMe: {from_me}")
-    print(f"Tipo: {message_type}")
+    logger.info(
+        "mensagem recebida | tipo=%s | de=%s | fromMe=%s | id=...%s",
+        message_type, mask_number(number), from_me, message_id[-6:],
+    )
 
     if message_type in ("conversation", "extendedTextMessage"):
         if message_type == "conversation":
@@ -87,7 +92,6 @@ def process_message(key: dict, message: dict, message_type: str) -> None:
         else:
             texto = message.get("extendedTextMessage", {}).get("text") or ""
         texto = texto.strip()
-        print(f"Texto: {texto}")
 
         # Feedback (👍/👎) sobre o último diagnóstico enviado a esse número
         if number in last_diagnosis and texto.startswith(("👍", "👎")):
@@ -98,23 +102,22 @@ def process_message(key: dict, message: dict, message_type: str) -> None:
 
     elif message_type == "imageMessage":
         image_data = message.get("imageMessage", {})
-        print(f"Mimetype: {image_data.get('mimetype')}")
-        print(f"Caption: {image_data.get('caption')}")
+        logger.info("imagem | mimetype=%s", image_data.get("mimetype"))
 
         base64_image = get_image_base64(message_id)
         if base64_image:
-            print(f"Imagem decodificada com sucesso ({len(base64_image)} caracteres em base64)")
+            logger.info("imagem decodificada (%d caracteres em base64)", len(base64_image))
             try:
                 resultado = analisar_foto(base64_image)
                 resposta = resultado["texto"]
                 if resultado["diagnostico"]:
                     last_diagnosis[number] = resultado["diagnostico"]
-            except Exception as e:
-                print(f"Erro no pipeline: {type(e).__name__}")
+            except Exception:
+                logger.exception("erro no pipeline")
                 resposta = "Tive um problema para analisar a foto. Pode tentar de novo daqui a pouco?"
             send_text(number, resposta)
         else:
-            print("Falha ao obter a imagem")
+            logger.warning("falha ao obter a imagem")
             send_text(number, "Não consegui abrir a foto. Pode mandar de novo?")
 
     elif message_type in TIPOS_SEM_SUPORTE:
