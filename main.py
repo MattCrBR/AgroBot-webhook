@@ -4,6 +4,7 @@ import requests
 import random
 from fastapi import FastAPI, Request, BackgroundTasks
 from dotenv import load_dotenv
+from pipeline import analisar_foto
 
 load_dotenv()
 
@@ -104,7 +105,12 @@ def process_message(key: dict, message: dict, message_type: str) -> None:
         base64_image = get_image_base64(message_id)
         if base64_image:
             print(f"Imagem decodificada com sucesso ({len(base64_image)} caracteres em base64)")
-            send_text(number, "Recebi sua foto! Em breve vou analisar.")
+            try:
+                resposta = analisar_foto(base64_image)
+            except Exception as e:
+                print(f"Erro no pipeline: {type(e).__name__}")
+                resposta = "Tive um problema para analisar a foto. Pode tentar de novo daqui a pouco?"
+            send_text(number, resposta)
         else:
             print("Falha ao obter a imagem")
             send_text(number, "Não consegui abrir a foto. Pode mandar de novo?")
