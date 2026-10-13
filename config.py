@@ -24,3 +24,6 @@ TIPOS_SEM_SUPORTE = {
     "audioMessage", "stickerMessage", "videoMessage",
     "documentMessage", "contactMessage", "locationMessage",
 }
+
+# Nível de log (DEBUG, INFO, WARNING, ERROR)
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
