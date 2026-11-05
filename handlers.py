@@ -9,7 +9,7 @@ from config import (
     TIPOS_SEM_SUPORTE,
 )
 from evolution import get_image_base64, send_text, sent_message_ids
-from pipeline import analisar_foto
+from analise import analisar_foto
 
 logger = logging.getLogger(__name__)
 
