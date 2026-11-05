@@ -4,7 +4,7 @@ Assistente de WhatsApp que recebe a foto de uma praga do milho enviada pelo prod
 
 Este repositório é a **API do projeto**: recebe as mensagens do WhatsApp (através da Evolution API), aplica filtros, chama o pipeline de análise e responde ao produtor.
 
-> **Estado atual:** o pipeline de análise (qualidade da foto, classificador, base de conhecimento e LLM) está com **funções de teste (mocks)** em `pipeline.py`. O diagnóstico devolvido é fixo e controlado pelo arquivo `.env`. Os módulos reais vão substituir essas funções, sem mudar o resto do fluxo.
+> **Estado atual:** o pipeline de análise é o **real**, vindo do repositório [UPX6-FACENS/AgroBot](https://github.com/UPX6-FACENS/AgroBot): porteiro de qualidade da foto → CNN (MobileNetV3 em ONNX, 4 classes) → roteador de confiança → ficha da base de conhecimento → Claude Haiku só reescreve em linguagem simples. A ligação entre o webhook e o pipeline fica em `analise.py`.
 
 ---
 
@@ -33,7 +33,10 @@ Evolution API (Docker) ──► ngrok ──► Webhook FastAPI (este projeto)
 | `main.py` | FastAPI e o endpoint `/webhook` |
 | `handlers.py` | Filtros dos eventos, tratamento das mensagens e feedback |
 | `evolution.py` | Chamadas à Evolution API (enviar texto, baixar imagem) |
-| `pipeline.py` | Pipeline de análise: mocks das etapas + roteador de confiança |
+| `analise.py` | Ponte entre o webhook e o pipeline: decodifica a foto e chama o diagnóstico |
+| `pipeline/` | Pipeline de diagnóstico (porteiro, CNN, roteador, base de conhecimento, LLM) |
+| `kb/` | Fichas técnicas das pragas (Embrapa, CATI etc.) usadas na resposta |
+| `checkpoints/` | Modelo treinado (`modelo.onnx`) e nomes das classes (`classes.json`) |
 | `config.py` | Leitura do `.env` e constantes |
 | `docker-compose.yml` | Evolution API + Postgres + Redis |
 | `.env.example` | Modelo do arquivo de configuração |
@@ -65,6 +68,7 @@ copy .env.example .env
 Abra o `.env` e ajuste:
 
 - `EVOLUTION_API_KEY`: qualquer texto longo e aleatório (no PowerShell, `[guid]::NewGuid()` gera um). É a "senha" da Evolution API.
+- `ANTHROPIC_API_KEY`: chave da Anthropic (o Claude só reescreve a ficha em linguagem simples). Sem ela o bot ainda funciona, com uma resposta mais "seca" tirada direto da ficha.
 - `ALLOWED_NUMBERS`: o número do WhatsApp que vai conversar com o bot, no formato `55` + DDD + número, sem `+`, espaços ou traços (ex.: `5511999999999`). Para mais de um, separe por vírgula.
 
 O mesmo `.env` é lido pelo webhook e pelo Docker, então a chave só precisa ser escrita uma vez.
@@ -162,20 +166,17 @@ No terminal do `uvicorn` aparecem linhas curtas como `mensagem recebida | tipo=i
 
 ---
 
-## Testando os caminhos do pipeline
+## O que o bot responde para cada foto
 
-Enquanto o pipeline é de teste, o resultado é decidido por estas variáveis do `.env`:
+| Situação | Resposta |
+|---|---|
+| Foto pequena ou borrada | Pede outra foto, antes de rodar o modelo |
+| Confiança ≥ 80% | Diagnóstico direto + manejo do mais barato ao mais caro + aviso + "Acertei? 👍 👎" |
+| Confiança 50–79% | "Pode ser X, mas não tenho certeza" e pede outra foto |
+| Confiança < 50% | Encaminha à Casa da Agricultura / CATI |
+| Milho saudável | "Não vi sinal de praga" |
 
-| `MOCK_CONFIANCA` | `MOCK_FOTO_OK` | O que o bot responde |
-|---|---|---|
-| `0.85` | `true` | Diagnóstico direto, com aviso e pergunta de feedback |
-| `0.65` | `true` | "Pode ser..., mas não tenho certeza" e pede outra foto |
-| `0.30` | `true` | Encaminha o produtor à Casa da Agricultura |
-| `0.85` | `false` | Pede outra foto (qualidade ruim) |
-
-`MOCK_PRAGA` aceita `lagarta-do-cartucho`, `lagarta-da-espiga`, `vaquinha` ou `milho-saudavel`.
-
-**Depois de mudar o `.env`, pare o `uvicorn` (`Ctrl+C`) e suba de novo.** O reinício automático só observa os arquivos `.py`.
+Classes do modelo: `lagarta_cartucho`, `lagarta_espiga`, `vaquinha`, `milho_sadio`. Para a demonstração, fotos nítidas e de perto funcionam melhor.
 
 ---
 
